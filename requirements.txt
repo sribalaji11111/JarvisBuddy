@@ -1,0 +1,5 @@
+anthropic>=1.11
+pyttsx3>=2.90
+SpeechRecognition>=3.10
+PyAudio>=0.2.14
+psutil>=5.9
