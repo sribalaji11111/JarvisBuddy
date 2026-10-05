@@ -201,3 +201,74 @@ class Listener:
         except sr.RequestError as e:
             print(f"(Speech service error: {e})")
             return None
+
+
+class WhisperListener:
+    """Offline speech recognition with faster-whisper: no internet needed, and usually quicker
+    than the online service. The model downloads once (about 140 MB for base.en)."""
+
+    RATE = 16000
+    BLOCK = 480  # 30 ms
+
+    def __init__(self, model: str = "base.en", silence_seconds: float = 0.6) -> None:
+        import queue
+
+        import numpy as np
+        import sounddevice as sd
+        from faster_whisper import WhisperModel
+
+        self._np = np
+        self.model = WhisperModel(model, device="cpu", compute_type="int8")
+        self.silence_seconds = silence_seconds
+        self._queue: "queue.Queue" = queue.Queue()
+        self._noise = 0.01
+        self._stream = sd.InputStream(samplerate=self.RATE, channels=1, dtype="float32", blocksize=self.BLOCK,
+                                      callback=lambda data, *_: self._queue.put(data[:, 0].copy()))
+        self._stream.start()
+
+    def listen(self, timeout: float | None = None, phrase_limit: float = 12) -> str | None:
+        import queue
+        import time
+
+        np = self._np
+        while not self._queue.empty():  # drop anything heard while Jarvis was talking
+            self._queue.get_nowait()
+        speech, started, silent_for, t0 = [], None, 0.0, time.monotonic()
+        while True:
+            try:
+                block = self._queue.get(timeout=0.5)
+            except queue.Empty:
+                block = None
+            if timeout and started is None and time.monotonic() - t0 > timeout:
+                return None
+            if block is None:
+                continue
+            level = float(np.sqrt(np.mean(block ** 2)))
+            loud = level > max(0.012, self._noise * 3)
+            if started is None:
+                self._noise = 0.98 * self._noise + 0.02 * level  # learn the room's background noise
+                if loud:
+                    started, speech, silent_for = time.monotonic(), [block], 0.0
+                continue
+            speech.append(block)
+            silent_for = 0.0 if loud else silent_for + self.BLOCK / self.RATE
+            if silent_for >= self.silence_seconds or len(speech) * self.BLOCK / self.RATE > phrase_limit:
+                break
+        audio = np.concatenate(speech)
+        if len(audio) < self.RATE * 0.35:
+            return None
+        segments, _ = self.model.transcribe(audio, language="en", beam_size=1, vad_filter=True)
+        text = " ".join(s.text for s in segments).strip()
+        return text or None
+
+
+def make_listener(engine: str, language: str, whisper_model: str):
+    """Offline Whisper when available (or asked for), otherwise Google's online recognizer."""
+    if engine in ("auto", "whisper"):
+        try:
+            return WhisperListener(whisper_model)
+        except Exception as e:
+            if engine == "whisper":
+                raise
+            print(f"(Offline speech recognition unavailable: {e}. Using Google's online service.)")
+    return Listener(language)

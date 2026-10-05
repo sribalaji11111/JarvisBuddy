@@ -39,6 +39,7 @@ class Brain:
         self.history: list[dict[str, Any]] = []
         self._client = client
         self._fast = config.fast_mode
+        self.backup: Brain | None = None  # used when Claude can't be reached (set by make_brain)
 
     @property
     def available(self) -> bool:
@@ -129,6 +130,8 @@ class Brain:
         except anthropic.APIStatusError as e:
             return Answer(f"Claude had a hiccup, error {e.status_code}. Try again in a moment.", "sad")
         except anthropic.APIConnectionError:
+            if self.backup is not None and self.backup.available:
+                return self.backup.ask(text, on_sentence)
             return Answer("I can't reach the internet right now.", "sad")
 
     def _stream(self, messages: list[dict[str, Any]], on_sentence: Callable[[str, str], None] | None) -> Answer:

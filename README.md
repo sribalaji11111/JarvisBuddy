@@ -12,9 +12,26 @@ Say **"Hey Jarvis"**, wait for **"Yes?"**, then talk. Or say it all at once: *"H
 
 1. Install [Python 3.10+](https://www.python.org/downloads/) and tick **"Add python.exe to PATH"**.
 2. Download or clone this repo.
-3. Double-click **`run.bat`**. The first run installs everything and creates a `.env` settings file.
-4. Optional but recommended: open `.env` and paste your Anthropic API key after `ANTHROPIC_API_KEY=`.
-   With it, Jarvis can chat about anything and learns from your conversations. Every built-in command works without it.
+3. Double-click **`setup.bat`** once. It installs every library, downloads the offline speech model (Whisper),
+   installs Ollama with winget if needed and downloads the offline brain (llama3.2, about 2 GB), then shows what's ready.
+4. Recommended: open `.env` and paste your Anthropic API key after `ANTHROPIC_API_KEY=`
+   (get one at [console.anthropic.com](https://console.anthropic.com)).
+5. Double-click **`run.bat`** to start Jarvis.
+
+## The pipeline (best setup)
+
+```
+your voice -> Whisper (offline ears) -> quick commands (instant) -> Claude brain + laptop tools -> voice + face
+                                                                   \-> Ollama (offline backup brain)
+```
+
+| Stage | Best choice | Why | Setting |
+|---|---|---|---|
+| Ears | Whisper `base.en` (offline) | Fast, accurate, no internet | `JARVIS_STT=auto` |
+| Quick commands | built in | "play Believer", "open notepad" answer instantly without AI | always on |
+| Brain | **Claude** | Smartest answers, most reliable with laptop tools | `ANTHROPIC_API_KEY`, `JARVIS_BRAIN=auto` |
+| Backup brain | Ollama `llama3.2` | Free, private, works offline (less smart, weaker with tools) | used automatically with no key or no internet |
+| Mouth | Windows voice (instant) or neural (cuter) | | `JARVIS_VOICE_ENGINE` |
 
 Prefer the terminal?
 
@@ -27,7 +44,7 @@ python -m jarvisbuddy             :: face + voice
 python -m jarvisbuddy --text      :: type instead of talking
 ```
 
-Options: `--text` (keyboard chat), `--mute` (don't speak), `--no-face` (no window), `--fullscreen` (face fills the
+Options: `--setup` (install libraries and models), `--text` (keyboard chat), `--mute` (don't speak), `--no-face` (no window), `--fullscreen` (face fills the
 screen, Esc to leave), `--no-wake-word` (every phrase is a command), `--check` (see what's set up),
 `--learn` (learn from today's chats), `--mcp-server` (offer the laptop tools to other apps).
 
@@ -158,7 +175,11 @@ first sentence. Set `JARVIS_FAST_MODE=1` for Claude's faster output mode (about 
 
 | Variable | Default | What it does |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | (empty) | Lets Jarvis chat about anything and learn from conversations |
+| `ANTHROPIC_API_KEY` | (empty) | Connects the Claude brain |
+| `JARVIS_BRAIN` | `auto` | `auto`, `claude` or `ollama` |
+| `JARVIS_OLLAMA_MODEL` | `llama3.2` | Offline brain model (try `qwen2.5:7b` for better tool use if your laptop has 16 GB RAM) |
+| `JARVIS_STT` | `auto` | `auto`, `whisper` (offline) or `google` (online) |
+| `JARVIS_WHISPER_MODEL` | `base.en` | `tiny.en`, `base.en` or `small.en` |
 | `JARVIS_USER_NAME` | `Sri` | What Jarvis calls you |
 | `JARVIS_NAME` | `Jarvis` | Assistant name, also the wake word |
 | `JARVIS_VOICE_ENGINE` | `windows` | `windows` (instant, offline) or `neural` (cuter, online) |

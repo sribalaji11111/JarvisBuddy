@@ -17,6 +17,18 @@ from .config import Config
 from .voice import make_speaker
 
 
+def _ollama_ready(config: Config) -> bool:
+    import json
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{config.ollama_url}/api/tags", timeout=1.5) as r:
+            names = [m.get("name", "") for m in json.load(r).get("models", [])]
+        return any(n.split(":")[0] == config.ollama_model.split(":")[0] for n in names)
+    except (OSError, ValueError):
+        return False
+
+
 def check(config: Config) -> None:
     """Print what's set up and what's missing."""
     def has(module: str) -> bool:
@@ -26,8 +38,12 @@ def check(config: Config) -> None:
         ("Windows voice (pywin32)", has("win32com"), "pip install pywin32"),
         ("Cute neural voice (edge-tts + pygame)", has("edge_tts") and has("pygame"),
          "pip install edge-tts pygame, then JARVIS_VOICE_ENGINE=neural"),
-        ("Microphone (SpeechRecognition + PyAudio)", has("speech_recognition") and has("pyaudio"),
+        ("Offline speech recognition (faster-whisper)", has("faster_whisper") and has("sounddevice"),
+         "pip install faster-whisper sounddevice"),
+        ("Online speech recognition (SpeechRecognition + PyAudio)", has("speech_recognition") and has("pyaudio"),
          "pip install SpeechRecognition PyAudio"),
+        (f"Offline brain (Ollama running with {config.ollama_model})", _ollama_ready(config),
+         "install Ollama from https://ollama.com, then run setup.bat"),
         ("Face window (tkinter)", has("tkinter"), "reinstall Python with Tcl/Tk"),
         ("Claude answers (ANTHROPIC_API_KEY)", config.ai_enabled, "add your key to .env"),
         ("Email sending (Gmail app password)", config.email_enabled,
@@ -48,6 +64,46 @@ def check(config: Config) -> None:
     print(f"\n  Memory and notes: {config.data_dir}")
 
 
+def setup(config: Config) -> None:
+    """Install every library and download every model Jarvis can use."""
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    print("1/4  Installing libraries...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "-r", str(root / "requirements.txt")])
+
+    print(f"2/4  Downloading the offline speech model ({config.whisper_model})...")
+    try:
+        from faster_whisper import WhisperModel
+
+        WhisperModel(config.whisper_model, device="cpu", compute_type="int8")
+        print("     Speech model ready.")
+    except Exception as e:
+        print(f"     Couldn't get the speech model: {e}")
+
+    print(f"3/4  Setting up the offline brain (Ollama + {config.ollama_model})...")
+    ollama = shutil.which("ollama") or next(
+        (str(p) for p in [Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Ollama/ollama.exe"] if p.is_file()), None)
+    if ollama is None and shutil.which("winget"):
+        print("     Installing Ollama with winget...")
+        subprocess.run(["winget", "install", "-e", "--id", "Ollama.Ollama",
+                        "--accept-package-agreements", "--accept-source-agreements"])
+        ollama = shutil.which("ollama") or next(
+            (str(p) for p in [Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Ollama/ollama.exe"]
+             if p.is_file()), None)
+    if ollama:
+        subprocess.run([ollama, "pull", config.ollama_model])
+    else:
+        print("     Ollama isn't installed. Get it from https://ollama.com/download, then run setup again.")
+
+    print("4/4  Checking everything...")
+    check(Config.from_env())
+    print("\nAll set! Start Jarvis with run.bat.")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="jarvisbuddy", description="Your desktop robot buddy.")
     parser.add_argument("--text", action="store_true", help="type commands instead of speaking")
@@ -58,11 +114,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--check", action="store_true", help="show which features are ready")
     parser.add_argument("--learn", action="store_true", help="learn from today's conversations, then exit")
     parser.add_argument("--mcp-server", action="store_true", help="run the laptop tools as an MCP server")
+    parser.add_argument("--setup", action="store_true", help="install all libraries and download the models")
     args = parser.parse_args(argv)
 
     config = Config.from_env()
     if args.check:
         check(config)
+        return
+    if args.setup:
+        setup(config)
         return
     if args.mcp_server:
         from .mcp_server import main as serve
@@ -71,12 +131,12 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.learn:
         from . import learn
-        from .brain import Brain
+        from .local_brain import make_brain
         from .memory import Memory
         from .skills import MOODS
 
         memory = Memory(config.memory_file)
-        brain = Brain(config, memory, moods=MOODS)
+        brain = make_brain(config, memory, MOODS)
         print(learn.daily(memory, brain, memory.name or config.user_name, config.assistant_name))
         return
 
@@ -117,9 +177,9 @@ def main(argv: list[str] | None = None) -> None:
                 assistant.run_text()
                 return
             try:
-                from .voice import Listener
+                from .voice import make_listener
 
-                listener = Listener(config.speech_language)
+                listener = make_listener(config.stt_engine, config.speech_language, config.whisper_model)
             except Exception as e:
                 print(f"(Microphone unavailable: {e}. Switching to text mode.)")
                 assistant.run_text()

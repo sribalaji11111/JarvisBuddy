@@ -1,12 +1,13 @@
 @echo off
-REM Double-click to start JarvisBuddy. First run sets everything up.
+REM Double-click to start JarvisBuddy. The first run sets everything up (libraries and models).
 cd /d "%~dp0"
 if not exist .venv (
     echo Setting up JarvisBuddy for the first time...
     python -m venv .venv || goto :nopython
     call .venv\Scripts\activate.bat
     python -m pip install --upgrade pip
-    pip install -r requirements.txt
+    if not exist .env copy .env.example .env >nul
+    python -m jarvisbuddy --setup
 ) else (
     call .venv\Scripts\activate.bat
 )

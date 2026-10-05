@@ -10,6 +10,7 @@ from typing import Callable, Protocol
 from . import skills
 from .actions import Actions
 from .brain import Brain
+from .local_brain import make_brain
 from .config import Config
 from .mailer import Mailer
 from .memory import Memory
@@ -66,7 +67,7 @@ class Assistant:
         self._read_answer: Callable[[], str | None] = lambda: None
         self.tools = ToolRunner(build_tools(config, self.actions, self.memory, mailer, speak=self.say),
                                 confirm=self.ask_yes_no, extra=mcp_hub)
-        self.brain = brain or Brain(config, self.memory, moods=skills.MOODS, tools=self.tools)
+        self.brain = brain or make_brain(config, self.memory, skills.MOODS, tools=self.tools)
         self.ctx = skills.Context(
             config=config, actions=self.actions, memory=self.memory, speak=self.say,
             mailer=mailer, brain=self.brain,

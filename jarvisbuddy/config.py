@@ -43,6 +43,15 @@ class Config:
 
     speech_language: str = "en-IN"  # accent for speech recognition, e.g. en-US, en-GB
 
+    # Speech recognition: "auto" (offline Whisper if installed, else Google), "whisper" or "google".
+    stt_engine: str = "auto"
+    whisper_model: str = "base.en"  # tiny.en (fastest), base.en, small.en (most accurate)
+
+    # Brain: "auto" (Claude with an API key, otherwise offline Ollama), "claude" or "ollama".
+    brain: str = "auto"
+    ollama_model: str = "llama3.2"
+    ollama_url: str = "http://localhost:11434"
+
     claude_model: str = "claude-opus-5-5"
     fast_mode: bool = False
 
@@ -96,6 +105,11 @@ class Config:
         if rate := env("JARVIS_VOICE_RATE"):
             cfg.voice_rate = int(rate)
         cfg.speech_language = env("JARVIS_SPEECH_LANGUAGE") or cfg.speech_language
+        cfg.stt_engine = (env("JARVIS_STT") or cfg.stt_engine).lower()
+        cfg.whisper_model = env("JARVIS_WHISPER_MODEL") or cfg.whisper_model
+        cfg.brain = (env("JARVIS_BRAIN") or cfg.brain).lower()
+        cfg.ollama_model = env("JARVIS_OLLAMA_MODEL") or cfg.ollama_model
+        cfg.ollama_url = env("JARVIS_OLLAMA_URL") or cfg.ollama_url
         cfg.claude_model = env("JARVIS_CLAUDE_MODEL") or cfg.claude_model
         cfg.fast_mode = _flag("JARVIS_FAST_MODE")
         cfg.email_address = env("JARVIS_EMAIL_ADDRESS", "")

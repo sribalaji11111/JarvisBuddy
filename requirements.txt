@@ -1,5 +1,8 @@
 anthropic>=1.11
 mcp>=1.20
+faster-whisper>=1.0
+sounddevice
+numpy
 SpeechRecognition>=3.10
 PyAudio>=0.2.14
 psutil>=5.9
