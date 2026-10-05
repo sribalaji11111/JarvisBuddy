@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import platform
+import re
 import shutil
 import subprocess
 import threading
+import urllib.request
 import webbrowser
 from typing import Callable
+from urllib.parse import quote_plus
 
 # Spoken name -> Windows command (run via `start`, so anything on PATH or registered works).
 WINDOWS_APPS: dict[str, str] = {
@@ -52,6 +55,13 @@ class Actions:
     def open_url(self, url: str) -> None:
         webbrowser.open(url)
 
+    def play_youtube(self, query: str) -> bool:
+        """Open the top YouTube result so it starts playing. Falls back to the search page."""
+        search = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+        video_id = first_youtube_video(search)
+        self.open_url(f"https://www.youtube.com/watch?v={video_id}" if video_id else search)
+        return video_id is not None
+
     def open_app(self, name: str) -> bool:
         """Launch an app by its spoken name. Returns False if we couldn't find it."""
         command = WINDOWS_APPS.get(name, name)
@@ -93,3 +103,21 @@ class Actions:
             status["battery"] = battery.percent
             status["plugged"] = float(bool(battery.power_plugged))
         return status
+
+
+def first_youtube_video(search_url: str, timeout: float = 4) -> str | None:
+    request = urllib.request.Request(
+        search_url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "en"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            page = response.read().decode("utf-8", "ignore")
+    except OSError:
+        return None
+    return parse_first_video_id(page)
+
+
+def parse_first_video_id(page: str) -> str | None:
+    match = re.search(r'"videoId":"([\w-]{11})"', page) or re.search(r"/watch\?v=([\w-]{11})", page)
+    return match.group(1) if match else None

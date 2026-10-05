@@ -1,14 +1,34 @@
-"""The main loop: wait for the wake word, hear a command, act on it, reply."""
+"""The main loop: wait for the wake word, hear a command, act on it, reply with voice and face."""
 
 from __future__ import annotations
 
+import random
 import re
-from typing import Callable
+from typing import Callable, Protocol
 
 from . import skills
 from .actions import Actions
 from .brain import Brain
 from .config import Config
+from .mailer import Mailer
+from .memory import Memory
+
+
+class UI(Protocol):
+    def set_mood(self, mood: str) -> None: ...
+    def set_status(self, text: str) -> None: ...
+    def set_caption(self, text: str) -> None: ...
+    def set_speaking(self, speaking: bool) -> None: ...
+
+
+class NoUI:
+    def set_mood(self, mood: str) -> None: pass
+    def set_status(self, text: str) -> None: pass
+    def set_caption(self, text: str) -> None: pass
+    def set_speaking(self, speaking: bool) -> None: pass
+
+
+POKES = ["Hehe, that tickles!", "Hey! Boop!", "Beep beep! Personal space!", "Ooh, do it again!"]
 
 
 def strip_wake_word(text: str, wake_words: tuple[str, ...]) -> str | None:
@@ -27,23 +47,58 @@ class Assistant:
         self,
         config: Config,
         speak: Callable[[str], None],
+        ui: UI | None = None,
         actions: Actions | None = None,
+        memory: Memory | None = None,
         brain: Brain | None = None,
+        mailer: Mailer | None = None,
     ) -> None:
         self.config = config
-        self.speak = speak
+        self._speak = speak
+        self.ui = ui or NoUI()
         self.actions = actions or Actions()
-        self.brain = brain or Brain(config)
-        self.ctx = skills.Context(config=config, actions=self.actions, speak=speak)
+        self.memory = memory or Memory(config.memory_file)
+        self.brain = brain or Brain(config, self.memory, moods=skills.MOODS)
+        self.ctx = skills.Context(
+            config=config, actions=self.actions, memory=self.memory, speak=self.say,
+            mailer=mailer or Mailer(config),
+        )
+
+    def say(self, text: str, mood: str = "happy") -> None:
+        print(f"{self.config.assistant_name}: {text}")
+        self.ui.set_mood(mood)
+        self.ui.set_caption(text)
+        self.ui.set_speaking(True)
+        try:
+            self._speak(text)
+        finally:
+            self.ui.set_speaking(False)
 
     def respond(self, text: str) -> skills.Reply:
         reply = skills.handle(text, self.ctx)
-        if reply is None:
-            reply = skills.Reply(self.brain.ask(text))
+        if reply is not None:
+            return reply
+        self.ui.set_status("Thinking...")
+        self.ui.set_mood("thinking")
+        answer = self.brain.ask(text, on_sentence=self.say)
+        self.brain.learn_in_background(text)
+        self.ui.set_status("")
+        return skills.Reply(answer.text, mood=answer.mood, spoken=answer.spoken)
+
+    def handle(self, text: str) -> skills.Reply:
+        """Respond to `text` and say the reply (unless it was already spoken while streaming)."""
+        self.ui.set_caption(f"You: {text}")
+        reply = self.respond(text)
+        if not reply.spoken:
+            self.say(reply.text, reply.mood)
         return reply
 
     def greet(self) -> None:
-        self.speak(skills.greeting(self.ctx))
+        reply = skills.greeting(self.ctx)
+        self.say(reply.text, reply.mood)
+
+    def poke(self) -> None:
+        self.say(random.choice(POKES), "laugh")
 
     def run_text(self, read: Callable[[str], str] = input) -> None:
         """Keyboard chat. No wake word needed."""
@@ -54,36 +109,38 @@ class Assistant:
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
-            if not text:
-                continue
-            reply = self.respond(text)
-            self.speak(reply.text)
-            if reply.end_session:
+            if text and self.handle(text).end_session:
                 break
 
     def run_voice(self, listener, always_listen: bool = False) -> None:
-        """Voice mode. Says "Yes?" after the wake word, then listens for the command."""
+        """Voice mode. Wake word, then the command. Follow-up questions (like "Should I send
+        it?") are answered without repeating the wake word."""
         self.greet()
         wake = self.config.wake_words
-        if not always_listen:
-            print(f'(Listening for "{wake[-1]}"... press Ctrl+C to quit.)')
+        idle_status = "Listening..." if always_listen else f'Say "{wake[-1].title()}"'
+        print(f"({idle_status}. Press Ctrl+C to quit.)")
         while True:
-            heard = listener.listen()
-            if not heard:
-                continue
-            print(f"You: {heard}")
-            command: str | None = heard
-            if not always_listen:
-                command = strip_wake_word(heard, wake)
+            if self.ctx.pending is not None:
+                self.ui.set_status("Listening for your answer...")
+                command = listener.listen(timeout=8)
+                if not command:
+                    self.ctx.pending = None  # don't let a stray "yes" later send an email
+                    self.ui.set_status(idle_status)
+                    continue
+            else:
+                self.ui.set_status(idle_status)
+                heard = listener.listen()
+                if not heard:
+                    continue
+                command = heard if always_listen else strip_wake_word(heard, wake)
                 if command is None:
                     continue
                 if not command:
-                    self.speak("Yes?")
+                    self.say("Yes?", "excited")
+                    self.ui.set_status("Listening...")
                     command = listener.listen(timeout=6)
                     if not command:
                         continue
-                    print(f"You: {command}")
-            reply = self.respond(command)
-            self.speak(reply.text)
-            if reply.end_session:
+            print(f"You: {command}")
+            if self.handle(command).end_session:
                 break
