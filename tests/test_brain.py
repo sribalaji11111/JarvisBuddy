@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import anthropic
-import httpx
 
 from jarvisbuddy.brain import Brain
 from jarvisbuddy.config import Config
@@ -81,6 +80,10 @@ def test_refusal(tmp_path):
 
 
 def test_fast_mode_falls_back_when_rejected(tmp_path):
+    try:  # newer anthropic SDKs ship httpx2, older ones httpx
+        import httpx2 as httpx
+    except ImportError:
+        import httpx
     request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
     error = anthropic.BadRequestError("no fast mode", response=httpx.Response(400, request=request), body=None)
     brain, api = make_brain(["[happy] Hi."], tmp_path, config=Config(fast_mode=True), error=error)
