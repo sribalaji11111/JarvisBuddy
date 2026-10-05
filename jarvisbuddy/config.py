@@ -61,6 +61,10 @@ class Config:
         return Path(override).expanduser() if override else Path(__file__).resolve().parent.parent / "personality.md"
 
     @property
+    def mcp_servers_file(self) -> Path:
+        return self.data_dir / "mcp_servers.json"
+
+    @property
     def memory_file(self) -> Path:
         return self.data_dir / "memory.json"
 

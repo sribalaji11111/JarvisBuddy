@@ -13,6 +13,7 @@ from .brain import Brain
 from .config import Config
 from .mailer import Mailer
 from .memory import Memory
+from .tools import ToolRunner, build_tools
 
 
 class UI(Protocol):
@@ -53,17 +54,36 @@ class Assistant:
         memory: Memory | None = None,
         brain: Brain | None = None,
         mailer: Mailer | None = None,
+        mcp_hub=None,
     ) -> None:
         self.config = config
         self._speak = speak
         self.ui = ui or NoUI()
         self.actions = actions or Actions()
         self.memory = memory or Memory(config.memory_file)
-        self.brain = brain or Brain(config, self.memory, moods=skills.MOODS)
+        mailer = mailer or Mailer(config)
+        # Where answers to yes/no questions come from (keyboard or microphone), set by the run loops.
+        self._read_answer: Callable[[], str | None] = lambda: None
+        self.tools = ToolRunner(build_tools(config, self.actions, self.memory, mailer, speak=self.say),
+                                confirm=self.ask_yes_no, extra=mcp_hub)
+        self.brain = brain or Brain(config, self.memory, moods=skills.MOODS, tools=self.tools)
         self.ctx = skills.Context(
             config=config, actions=self.actions, memory=self.memory, speak=self.say,
-            mailer=mailer or Mailer(config), brain=self.brain,
+            mailer=mailer, brain=self.brain,
         )
+
+    def ask_yes_no(self, question: str) -> bool:
+        """Ask out loud and wait for the answer. Only a clear yes counts; silence is a no."""
+        self.say(question, "thinking")
+        self.ui.set_status("Yes or no?")
+        answer = self._read_answer()
+        self.ui.set_status("")
+        if answer:
+            print(f"You: {answer}")
+        agreed = bool(answer) and skills.YES.fullmatch(skills.normalize(answer)) is not None
+        if not agreed:
+            self.say("Okay, I won't.", "neutral")
+        return agreed
 
     def say(self, text: str, mood: str = "happy") -> None:
         print(f"{self.config.assistant_name}: {text}")
@@ -108,6 +128,13 @@ class Assistant:
 
     def run_text(self, read: Callable[[str], str] = input) -> None:
         """Keyboard chat. No wake word needed."""
+        def answer() -> str | None:
+            try:
+                return read("You: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return None
+
+        self._read_answer = answer
         self.greet()
         while True:
             try:
@@ -122,6 +149,7 @@ class Assistant:
         """Voice mode. Wake word, then the command. After each reply Jarvis keeps listening for
         a few seconds, so you can carry on without saying the wake word again; questions like
         "Should I send it?" are answered the same way."""
+        self._read_answer = lambda: listener.listen(timeout=8)
         self.greet()
         wake = self.config.wake_words
         idle_status = "Listening..." if always_listen else f'Say "{wake[1].title()}"'

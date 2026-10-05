@@ -52,7 +52,8 @@ JOKES = [
     "Why did the computer go to the doctor? It had a virus. Don't worry, I'm vaccinated. Mostly.",
 ]
 
-YES = re.compile(r"(yes|yeah|yep|yup|sure|ok|okay|send( it)?|go ahead|do it|confirm|correct|right)( please| send it| jarvis)*")
+YES = re.compile(r"(?:(?:yes|yeah|yep|yup|sure|ok|okay|send it|send|go ahead|do it|confirm|correct|right|"
+                 r"please|absolutely|of course|jarvis)\s*)+")
 
 
 @dataclass

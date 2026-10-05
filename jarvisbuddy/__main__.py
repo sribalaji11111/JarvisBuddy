@@ -2,7 +2,8 @@
               python -m jarvisbuddy --text        (type instead of talking)
               python -m jarvisbuddy --fullscreen  (face fills the screen)
               python -m jarvisbuddy --check       (see what's working)
-              python -m jarvisbuddy --learn       (learn from today's chats)"""
+              python -m jarvisbuddy --learn       (learn from today's chats)
+              python -m jarvisbuddy --mcp-server  (offer the laptop tools to other MCP apps)"""
 
 from __future__ import annotations
 
@@ -37,6 +38,10 @@ def check(config: Config) -> None:
         ("Screenshots (pillow)", has("PIL"), "pip install pillow"),
         ("Typing (pyautogui)", has("pyautogui"), "pip install pyautogui"),
         ("Battery and system (psutil)", has("psutil"), "pip install psutil"),
+        ("Safe delete to Recycle Bin (send2trash)", has("send2trash"), "pip install send2trash"),
+        ("MCP (server and extra servers)", has("mcp"), "pip install mcp"),
+        (f"Extra MCP servers ({config.mcp_servers_file.name})", config.mcp_servers_file.is_file(),
+         "optional: list servers there, same format as Claude Desktop"),
     ]
     for name, ok, fix in rows:
         print(f"  {'OK ' if ok else '-- '} {name}" + ("" if ok else f"   ->  {fix}"))
@@ -52,11 +57,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--no-wake-word", action="store_true", help="treat everything heard as a command")
     parser.add_argument("--check", action="store_true", help="show which features are ready")
     parser.add_argument("--learn", action="store_true", help="learn from today's conversations, then exit")
+    parser.add_argument("--mcp-server", action="store_true", help="run the laptop tools as an MCP server")
     args = parser.parse_args(argv)
 
     config = Config.from_env()
     if args.check:
         check(config)
+        return
+    if args.mcp_server:
+        from .mcp_server import main as serve
+
+        serve()
         return
     if args.learn:
         from . import learn
@@ -81,7 +92,19 @@ def main(argv: list[str] | None = None) -> None:
         except Exception as e:  # no display, tkinter missing...
             print(f"(Face window unavailable: {e}.)")
 
-    assistant = Assistant(config, speak=speaker.say, ui=face)
+    hub = None
+    if config.mcp_servers_file.is_file():
+        try:
+            from .mcp_hub import McpHub
+
+            hub = McpHub(config.mcp_servers_file).start()
+            print(f"(Connected {len(hub.tools)} tools from your MCP servers.)")
+            for error in hub.errors:
+                print(f"(MCP server problem: {error})")
+        except Exception as e:
+            print(f"(Couldn't start MCP servers: {e})")
+
+    assistant = Assistant(config, speak=speaker.say, ui=face, mcp_hub=hub)
     if face is not None:
         face.canvas.bind("<Button-1>", lambda e: threading.Thread(target=assistant.poke, daemon=True).start())
 

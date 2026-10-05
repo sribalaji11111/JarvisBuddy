@@ -1,6 +1,17 @@
 anthropic>=1.11
+mcp>=1.20
 SpeechRecognition>=3.10
 PyAudio>=0.2.14
 psutil>=5.9
+yt-dlp
+pyautogui
+pillow
+send2trash
+screen-brightness-control
 pywin32>=306; sys_platform == "win32"
+pycaw; sys_platform == "win32"
+comtypes; sys_platform == "win32"
 pyttsx3>=2.90; sys_platform != "win32"
+# Optional cute neural voice (JARVIS_VOICE_ENGINE=neural):
+edge-tts
+pygame
