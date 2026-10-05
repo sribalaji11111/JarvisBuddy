@@ -147,3 +147,10 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# JarvisBuddy
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+!.env.example
