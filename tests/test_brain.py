@@ -96,8 +96,8 @@ def test_without_api_key(monkeypatch):
 
 def test_learns_facts_in_background(tmp_path):
     brain, _ = make_brain([], tmp_path)
-    created = SimpleNamespace(stop_reason="end_turn",
-                              content=[SimpleNamespace(type="text", text="Sri has a dog named Bruno\nSri works at TCS")])
+    facts = "Sri has a dog named Bruno\nSri works at TCS"
+    created = SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text=facts)])
     brain._client.messages = SimpleNamespace(create=lambda **kw: created)
     brain._learn("my dog Bruno hates my job at TCS")
     assert brain.memory.facts == ["Sri has a dog named Bruno", "Sri works at TCS"]

@@ -86,7 +86,7 @@ class Config:
         return bool(self.email_address and self.email_password)
 
     @classmethod
-    def from_env(cls, dotenv: Path | None = None) -> "Config":
+    def from_env(cls, dotenv: Path | None = None) -> Config:
         _load_dotenv(dotenv or Path.cwd() / ".env")
         env = os.environ.get
         cfg = cls()

@@ -215,12 +215,17 @@ def project_folder(m, ctx):
     return Reply("Opening your projects.", mood="happy")
 ```
 
-## Development
+## Development (a little every day)
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest
+python -m pytest -q
+ruff check jarvisbuddy tests
 ```
+
+- `CLAUDE.md` explains how the code fits together and where to add things.
+- `ROADMAP.md` has a day-by-day list of upgrades to build next.
+- GitHub Actions runs the tests and linter on every push.
 
 Tests use fakes for the microphone, speaker, apps, email and Claude, so they run anywhere. One test starts the
 real MCP server and connects to it.

@@ -5,13 +5,13 @@ from __future__ import annotations
 import ctypes
 import platform
 import re
-import time
 import shutil
 import subprocess
 import threading
+import time
 import urllib.request
 import webbrowser
-from typing import Callable
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote, quote_plus, urlencode
 

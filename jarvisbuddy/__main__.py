@@ -85,15 +85,16 @@ def setup(config: Config) -> None:
         print(f"     Couldn't get the speech model: {e}")
 
     print(f"3/4  Setting up the offline brain (Ollama + {config.ollama_model})...")
-    ollama = shutil.which("ollama") or next(
-        (str(p) for p in [Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Ollama/ollama.exe"] if p.is_file()), None)
+    def find_ollama() -> str | None:
+        default = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+        return shutil.which("ollama") or (str(default) if default.is_file() else None)
+
+    ollama = find_ollama()
     if ollama is None and shutil.which("winget"):
         print("     Installing Ollama with winget...")
         subprocess.run(["winget", "install", "-e", "--id", "Ollama.Ollama",
                         "--accept-package-agreements", "--accept-source-agreements"])
-        ollama = shutil.which("ollama") or next(
-            (str(p) for p in [Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Ollama/ollama.exe"]
-             if p.is_file()), None)
+        ollama = find_ollama()
     if ollama:
         subprocess.run([ollama, "pull", config.ollama_model])
     else:

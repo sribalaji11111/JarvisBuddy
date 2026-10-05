@@ -220,7 +220,7 @@ class WhisperListener:
         self._np = np
         self.model = WhisperModel(model, device="cpu", compute_type="int8")
         self.silence_seconds = silence_seconds
-        self._queue: "queue.Queue" = queue.Queue()
+        self._queue: queue.Queue = queue.Queue()
         self._noise = 0.01
         self._stream = sd.InputStream(samplerate=self.RATE, channels=1, dtype="float32", blocksize=self.BLOCK,
                                       callback=lambda data, *_: self._queue.put(data[:, 0].copy()))

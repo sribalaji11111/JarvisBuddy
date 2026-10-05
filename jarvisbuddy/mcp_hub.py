@@ -44,7 +44,7 @@ class McpHub:
             self.errors.append(f"{self.config_file.name}: {e}")
             return {}
 
-    def start(self) -> "McpHub":
+    def start(self) -> McpHub:
         servers = self.servers
         if servers:
             asyncio.run_coroutine_threadsafe(self._connect_all(servers), self._loop).result(self.timeout)

@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import random
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote_plus
 
 from .actions import Actions
@@ -155,7 +156,8 @@ def _daily_answer(q: DailyQuestion) -> PendingHandler:
 def _clean_answer(text: str) -> str:
     t = normalize(text)
     t = re.sub(r"^(i think |well |um |uh |hmm )+", "", t)
-    t = re.sub(r"^(my favou?rite \w+ is |i (really )?(like|love|prefer|do|follow|live in) |it's |it is |i'm a |i am a )", "", t)
+    t = re.sub(r"^(my favou?rite \w+ is |i (really )?(like|love|prefer|do|follow|live in) "
+               r"|it's |it is |i'm a |i am a )", "", t)
     return t
 
 
@@ -450,7 +452,8 @@ def cancel_shutdown(m: re.Match[str], ctx: Context) -> Reply:
     return Reply("Phew! Cancelled.", mood="happy")
 
 
-@skill(r"(system|computer|pc|laptop) (status|info|health)|battery( status| level)?|how('s| is) my (pc|computer|system|laptop)")
+@skill(r"(system|computer|pc|laptop) (status|info|health)|battery( status| level)?",
+       r"how('s| is) my (pc|computer|system|laptop)")
 def system(m: re.Match[str], ctx: Context) -> Reply:
     status = ctx.actions.system_status()
     if status is None:

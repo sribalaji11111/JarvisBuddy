@@ -5,13 +5,14 @@ from __future__ import annotations
 import random
 import re
 import time
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from . import skills
 from .actions import Actions
 from .brain import Brain
-from .local_brain import make_brain
 from .config import Config
+from .local_brain import make_brain
 from .mailer import Mailer
 from .memory import Memory
 from .tools import ToolRunner, build_tools

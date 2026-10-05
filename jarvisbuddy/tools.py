@@ -17,9 +17,10 @@ import platform
 import shutil
 import subprocess
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote_plus
 
 from .actions import Actions
@@ -346,7 +347,8 @@ def build_tools(config: Config, actions: Actions, memory: Memory, mailer: Mailer
         target = resolve_path(path)
         if not target.exists():
             return f"{target} doesn't exist."
-        if target in (Path.home(), Path(target.anchor)) or target.name.lower() in KNOWN_FOLDERS and target.parent == Path.home():
+        main_folder = target.parent == Path.home() and target.name.lower() in KNOWN_FOLDERS
+        if target in (Path.home(), Path(target.anchor)) or main_folder:
             return "I won't delete a main folder like that."
         try:
             from send2trash import send2trash

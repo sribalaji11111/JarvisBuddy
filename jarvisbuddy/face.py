@@ -8,7 +8,7 @@ import queue
 import random
 import time
 import tkinter as tk
-from typing import Callable
+from collections.abc import Callable
 
 W, H = 520, 440
 BG = "#0b0f17"
