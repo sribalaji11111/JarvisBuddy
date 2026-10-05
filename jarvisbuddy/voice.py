@@ -100,6 +100,75 @@ class Speaker:
                 self._pyttsx3.runAndWait()
 
 
+# Cute neural voice: a child-like Microsoft voice, pitched up, alternating pitch each sentence.
+NEURAL_VOICE = "en-US-AnaNeural"
+NEURAL_PITCHES = ("+25Hz", "+40Hz", "+30Hz", "+45Hz")
+
+
+def neural_settings(text: str, style: str = "singsong") -> list[tuple[str, str]]:
+    """(sentence, pitch) pairs for the neural voice."""
+    sentences = [s.strip() for s in re.findall(r"[^.!?]+[.!?]*", text) if s.strip()] or [text]
+    if style != "singsong":
+        return [(" ".join(sentences), NEURAL_PITCHES[0])]
+    return [(sentence, NEURAL_PITCHES[i % len(NEURAL_PITCHES)]) for i, sentence in enumerate(sentences)]
+
+
+class NeuralSpeaker:
+    """Microsoft's online neural voices through edge-tts: much cuter and smoother than the
+    built-in voices, but needs internet. Falls back to `fallback` when it can't connect."""
+
+    def __init__(self, fallback: Speaker, voice: str = NEURAL_VOICE, style: str = "singsong") -> None:
+        import edge_tts  # noqa: F401  (fail early if missing)
+        import pygame
+
+        pygame.mixer.init()
+        self.fallback = fallback
+        self.voice = voice
+        self.style = style
+        self._lock = threading.Lock()
+
+    def _fetch(self, text: str, pitch: str) -> bytes:
+        import asyncio
+
+        import edge_tts
+
+        async def go() -> bytes:
+            data = bytearray()
+            async for chunk in edge_tts.Communicate(text, self.voice, rate="+8%", pitch=pitch).stream():
+                if chunk["type"] == "audio":
+                    data += chunk["data"]
+            return bytes(data)
+
+        return asyncio.run(asyncio.wait_for(go(), timeout=8))
+
+    def say(self, text: str) -> None:
+        import io
+
+        import pygame
+
+        with self._lock:
+            try:
+                clips = [self._fetch(sentence, pitch) for sentence, pitch in neural_settings(text, self.style)]
+            except Exception:
+                self.fallback.say(text)
+                return
+            for clip in clips:
+                sound = pygame.mixer.Sound(file=io.BytesIO(clip))
+                channel = sound.play()
+                while channel.get_busy():
+                    pygame.time.wait(20)
+
+
+def make_speaker(engine: str, style: str, voice_name: str, rate: int, enabled: bool = True):
+    windows = Speaker(style, voice_name, rate, enabled=enabled)
+    if enabled and engine == "neural":
+        try:
+            return NeuralSpeaker(windows, style=style)
+        except Exception as e:
+            print(f"(Cute neural voice unavailable: {e}. Using the Windows voice.)")
+    return windows
+
+
 class Listener:
     """Microphone input through Google's free speech recognition."""
 

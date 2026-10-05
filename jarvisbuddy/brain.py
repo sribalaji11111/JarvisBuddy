@@ -63,6 +63,9 @@ class Brain:
             f"Start every reply with one face tag in square brackets that matches how you feel, chosen "
             f"from: {', '.join(self.moods)}. Example: [laugh] Because light attracts bugs!"
         )
+        personality = self.config.personality_file
+        if personality.is_file():
+            prompt += f"\n\nYour personality, written by {name}:\n" + personality.read_text(encoding="utf-8").strip()
         profile = self.memory.profile(name) if self.memory else ""
         if profile:
             prompt += (
@@ -169,26 +172,31 @@ class Brain:
         threading.Thread(target=self._learn, args=(text,), daemon=True).start()
 
     def _learn(self, text: str) -> None:
+        for fact in self.extract_facts(text, f"what {self._name()} just said to their voice assistant"):
+            self.memory.add_fact(fact)
+
+    def extract_facts(self, text: str, source: str) -> list[str]:
+        """Lasting personal facts found in `text`, as short third-person sentences."""
+        if not self.available:
+            return []
         name = self._name()
         try:
             response = self._get_client().messages.create(
                 model=self.config.claude_model,
-                max_tokens=300,
+                max_tokens=600,
                 output_config={"effort": "low"},
                 system=(
-                    f"Extract lasting personal facts about {name} (preferences, people, plans, routines, "
-                    f"background) from what {name} just said to their voice assistant. Write each as a "
-                    f"short third-person sentence starting with '{name}', one per line. Skip questions, "
-                    "commands and passing moods. If there is nothing worth remembering, reply NONE."
+                    f"Extract lasting personal facts about {name} (preferences, people, work, plans, "
+                    f"routines, background) from {source}. Write each as a short third-person sentence "
+                    f"starting with '{name}', one per line. Skip questions, commands and passing moods. "
+                    "If there is nothing worth remembering, reply NONE."
                 ),
                 messages=[{"role": "user", "content": text}],
             )
         except Exception:
-            return  # learning is best-effort
+            return []  # learning is best-effort
         out = " ".join(b.text for b in response.content if b.type == "text").strip()
         if response.stop_reason == "refusal" or not out or out.upper().startswith("NONE"):
-            return
-        for line in out.splitlines():
-            line = line.strip(" -•\t")
-            if line and line.upper() != "NONE":
-                self.memory.add_fact(line)
+            return []
+        facts = [line.strip(" -•\t") for line in out.splitlines()]
+        return [f for f in facts if f and f.upper() != "NONE"][:15]

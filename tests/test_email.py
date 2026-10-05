@@ -63,9 +63,14 @@ def test_voice_mode_drops_confirmation_on_silence(jarvis):
     assert jarvis.spoken[-1].startswith("Bye bye")
 
 
-def test_email_not_configured(jarvis):
+def test_without_email_setup_opens_a_draft_after_yes(jarvis):
     jarvis.ctx.mailer.ready = False
-    assert "isn't set up" in say(jarvis, "send an email to mom saying hi")
+    opened = []
+    jarvis.actions.mail_draft = lambda to, subject, body: opened.append((to, body))
+    assert "Should I send it?" in say(jarvis, "send an email to a at b dot com saying hi")
+    assert opened == []
+    assert "mail app" in say(jarvis, "yes")
+    assert opened == [("a@b.com", "Hi")]
 
 
 def test_save_contact(jarvis):

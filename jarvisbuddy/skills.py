@@ -7,7 +7,7 @@ import random
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import quote_plus
 
 from .actions import Actions
@@ -73,10 +73,12 @@ class Context:
     memory: Memory
     speak: Callable[[str, str], None]
     mailer: Mailer | None = None
+    brain: Any = None
     now: Callable[[], datetime] = datetime.now
     # When Jarvis asks a follow-up question, the next thing you say goes here first.
     pending: PendingHandler | None = None
     draft: dict = field(default_factory=dict)
+    song_results: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -154,6 +156,17 @@ def _clean_answer(text: str) -> str:
     t = re.sub(r"^(i think |well |um |uh |hmm )+", "", t)
     t = re.sub(r"^(my favou?rite \w+ is |i (really )?(like|love|prefer|do|follow|live in) |it's |it is |i'm a |i am a )", "", t)
     return t
+
+
+def confirm(ctx: Context, question: str, action: Callable[[], Reply], mood: str = "thinking") -> Reply:
+    """Ask a yes/no question; `action` runs only on a clear yes."""
+    def answered(text: str, ctx: Context) -> Reply:
+        if YES.fullmatch(normalize(text)):
+            return action()
+        return Reply("Okay, cancelled.", mood="neutral")
+
+    ctx.pending = answered
+    return Reply(question, mood=mood)
 
 
 # --- conversation -----------------------------------------------------------
@@ -250,6 +263,54 @@ def timer(m: re.Match[str], ctx: Context) -> Reply:
 
 # --- music and web ----------------------------------------------------------
 
+_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}
+
+
+@skill(r"(pause|stop)( the)?( music| song| video)?|(resume|continue|unpause)( the)?( music| song| video)?")
+def pause_resume(m: re.Match[str], ctx: Context) -> Reply:
+    ctx.actions.media_key("play_pause")
+    return Reply("Okay!", mood="wink")
+
+
+@skill(r"(next|skip)( song| track| video| one)?|play (the )?next( song)?")
+def next_song(m: re.Match[str], ctx: Context) -> Reply:
+    ctx.actions.media_key("next")
+    return Reply("Next one!", mood="excited")
+
+
+@skill(r"(previous|go back|last)( song| track| video| one)?|play (the )?previous( song)?")
+def previous_song(m: re.Match[str], ctx: Context) -> Reply:
+    ctx.actions.media_key("previous")
+    return Reply("Going back!", mood="happy")
+
+
+@skill(r"play (number |the )?(?P<n>[1-5]|one|two|three|four|five|first|second|third|fourth|fifth)( one| song)?")
+def play_number(m: re.Match[str], ctx: Context) -> Reply:
+    if not ctx.song_results:
+        return Reply("Search for songs first, like 'search songs by Arijit Singh', then pick a number.",
+                     mood="confused")
+    n = int(m["n"]) if m["n"].isdigit() else _NUMBERS[m["n"]]
+    if n > len(ctx.song_results):
+        return Reply(f"Pick a number from 1 to {len(ctx.song_results)}.", mood="confused")
+    title, url = ctx.song_results[n - 1]
+    ctx.actions.open_url(url)
+    ctx.memory.record_song(title)
+    return Reply(f"Playing {title}!", mood="excited")
+
+
+@skill(r"(search|find|show me)( for)? (songs?|music) (by |of |from )?(?P<q>.+)",
+       r"(search|find|show me)( for)? (?P<q>.+?) songs")
+def search_songs(m: re.Match[str], ctx: Context) -> Reply:
+    q = m["q"]
+    ctx.song_results = ctx.actions.youtube_results(q, 5)
+    if not ctx.song_results:
+        ctx.actions.open_url(f"https://www.youtube.com/results?search_query={quote_plus(q)}")
+        return Reply(f"Here are YouTube results for {q}.", mood="happy")
+    names = ". ".join(f"{i}: {title}" for i, (title, _) in enumerate(ctx.song_results[:3], 1))
+    return Reply(f"I found {names}. Say play number one, two or three.", mood="excited")
+
+
 
 @skill(r"search (youtube )?(for )?(?P<q>.+?) on youtube", r"search youtube (for )?(?P<q>.+)")
 def youtube_search(m: re.Match[str], ctx: Context) -> Reply:
@@ -301,6 +362,93 @@ def lock(m: re.Match[str], ctx: Context) -> Reply:
     return Reply("I can only lock the screen on Windows.", mood="sad")
 
 
+@skill(r"(set )?(the )?volume (to )?(?P<n>\d{1,3})( percent| %)?")
+def volume_set(m: re.Match[str], ctx: Context) -> Reply:
+    level = min(100, int(m["n"]))
+    ctx.actions.set_volume(level)
+    return Reply(f"Volume {level} percent.", mood="happy")
+
+
+@skill(r"volume up|louder|(turn|crank) (it |the volume )?up|(increase|raise)( the)? volume")
+def volume_up(m: re.Match[str], ctx: Context) -> Reply:
+    ctx.actions.media_key("volume_up", 5)
+    return Reply("Louder!", mood="excited")
+
+
+@skill(r"volume down|quieter|softer|turn (it |the volume )?down|(decrease|lower|reduce)( the)? volume")
+def volume_down(m: re.Match[str], ctx: Context) -> Reply:
+    ctx.actions.media_key("volume_down", 5)
+    return Reply("Shh, quieter.", mood="wink")
+
+
+@skill(r"(mute|unmute)( the)?( sound| volume| audio| laptop)?")
+def mute(m: re.Match[str], ctx: Context) -> Reply:
+    ctx.actions.media_key("mute")
+    return Reply("Done.", mood="neutral")
+
+
+@skill(r"(set )?(the )?brightness (to )?(?P<n>\d{1,3})( percent| %)?")
+def brightness(m: re.Match[str], ctx: Context) -> Reply:
+    level = min(100, int(m["n"]))
+    if ctx.actions.set_brightness(level):
+        return Reply(f"Brightness {level} percent.", mood="happy")
+    return Reply("I can't change the brightness on this screen.", mood="sad")
+
+
+@skill(r"(take a |take )?screen ?shot")
+def screenshot(m: re.Match[str], ctx: Context) -> Reply:
+    if ctx.actions.screenshot():
+        return Reply("Cheese! Screenshot saved in your Pictures folder.", mood="wink")
+    return Reply("I couldn't take a screenshot. I need the pillow package.", mood="sad")
+
+
+@skill(r"type (?P<text>.+)")
+def type_text(m: re.Match[str], ctx: Context) -> Reply:
+    if ctx.actions.type_text(m["text"]):
+        return Reply("Typed!", mood="happy")
+    return Reply("Typing needs the pyautogui package.", mood="sad")
+
+
+@skill(r"(what's |what is |how's |how is )?(the )?weather( like)?( (in|at|for) (?P<city>.+?))?( today| now| outside)?")
+def weather(m: re.Match[str], ctx: Context) -> Reply:
+    city = m["city"] or ""
+    report = ctx.actions.weather(city)
+    if report is None:
+        return Reply("I couldn't reach the weather service.", mood="sad")
+    return Reply(f"Weather{' in ' + city if city else ''}: {report}.", mood="happy")
+
+
+@skill(r"(close|quit|exit|kill) (the |my )?(?P<app>.+?)( app)?")
+def close_app(m: re.Match[str], ctx: Context) -> Reply:
+    app = m["app"]
+
+    def close() -> Reply:
+        if ctx.actions.close_app(app):
+            return Reply(f"Closed {app}.", mood="happy")
+        return Reply(f"{app} doesn't seem to be open.", mood="confused")
+
+    return confirm(ctx, f"Close {app}? Unsaved work may be lost.", close)
+
+
+@skill(r"(?P<what>shut ?down|turn off|power off|restart|reboot)( the| my)?( laptop| computer| pc)?")
+def shutdown(m: re.Match[str], ctx: Context) -> Reply:
+    restart = m["what"] in ("restart", "reboot")
+    word = "Restart" if restart else "Shut down"
+
+    def go() -> Reply:
+        if ctx.actions.shutdown(restart):
+            return Reply(f"{word} in one minute. Say cancel shutdown to stop it.", mood="sleepy")
+        return Reply("I can only do that on Windows.", mood="sad")
+
+    return confirm(ctx, f"{word} the laptop?", go, mood="surprised")
+
+
+@skill(r"(cancel|abort|stop)( the)? (shut ?down|restart|reboot)")
+def cancel_shutdown(m: re.Match[str], ctx: Context) -> Reply:
+    ctx.actions.cancel_shutdown()
+    return Reply("Phew! Cancelled.", mood="happy")
+
+
 @skill(r"(system|computer|pc|laptop) (status|info|health)|battery( status| level)?|how('s| is) my (pc|computer|system|laptop)")
 def system(m: re.Match[str], ctx: Context) -> Reply:
     status = ctx.actions.system_status()
@@ -326,12 +474,6 @@ _MAIL = r"(send|write|compose|draft) (an |a )?(e-?mail|mail|message on email)"
        _MAIL + r" to (?P<to>.+)",
        _MAIL)
 def email(m: re.Match[str], ctx: Context) -> Reply:
-    if ctx.mailer is None or not ctx.mailer.ready:
-        return Reply(
-            "Email isn't set up yet. Add your email address and app password to the .env file, "
-            "and then I can send emails for you.",
-            mood="confused",
-        )
     ctx.draft = {"to": None, "name": None, "body": m.groupdict().get("body")}
     who = m.groupdict().get("to")
     if not who:
@@ -377,6 +519,9 @@ def _email_confirm(text: str, ctx: Context) -> Reply:
     if not YES.fullmatch(normalize(text)):
         return _cancel_email(ctx)
     draft, ctx.draft = ctx.draft, {}
+    if ctx.mailer is None or not ctx.mailer.ready:
+        ctx.actions.mail_draft(draft["to"], subject_from(draft["body"]), draft["body"])
+        return Reply("I opened it in your mail app. Press Send there!", mood="wink")
     try:
         ctx.mailer.send(draft["to"], subject_from(draft["body"]), draft["body"])
     except Exception as e:
@@ -468,6 +613,14 @@ def forget(m: re.Match[str], ctx: Context) -> Reply:
     if not removed:
         return Reply(f"I didn't have anything about {m['what']}.", mood="confused")
     return Reply("Poof! Forgotten.", mood="wink")
+
+
+@skill(r"learn from today|train yourself|daily (training|learning)|study today|update your memory")
+def learn_today(m: re.Match[str], ctx: Context) -> Reply:
+    from . import learn
+
+    return Reply(learn.daily(ctx.memory, ctx.brain, ctx.name, ctx.config.assistant_name, ctx.now().date()),
+                 mood="excited")
 
 
 def _first_to_third_person(text: str, name: str) -> str:

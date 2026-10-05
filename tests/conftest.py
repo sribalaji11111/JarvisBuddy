@@ -30,6 +30,47 @@ class FakeActions:
     def schedule(self, seconds, callback):
         self.timers.append((seconds, callback))
 
+    def youtube_results(self, query, n=5):
+        self.searched = query
+        return [(f"{query} song {i}", f"https://youtu.be/{i}") for i in range(1, n + 1)]
+
+    def media_key(self, key, times=1):
+        self.keys = getattr(self, "keys", []) + [(key, times)]
+        return True
+
+    def set_volume(self, level):
+        self.volume = level
+        return True
+
+    def set_brightness(self, level):
+        self.brightness = level
+        return True
+
+    def screenshot(self):
+        return "shot.png"
+
+    def type_text(self, text):
+        self.typed = text
+        return True
+
+    def close_app(self, name):
+        self.closed = name
+        return True
+
+    def shutdown(self, restart=False):
+        self.shut = "restart" if restart else "shutdown"
+        return True
+
+    def cancel_shutdown(self):
+        self.shut = None
+        return True
+
+    def weather(self, city=""):
+        return "Sunny, 31°C, wind 10km/h"
+
+    def mail_draft(self, to, subject, body):
+        self.draft = (to, body)
+
     def system_status(self):
         return {"cpu": 12.3, "memory": 45.6, "battery": 80.0, "plugged": 1.0}
 

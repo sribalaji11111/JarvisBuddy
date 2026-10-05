@@ -6,7 +6,7 @@ import json
 import threading
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -144,6 +144,32 @@ class Memory:
         self.data["answered"].append(q.id)
         self.add_fact(fact)
         return fact
+
+    # --- conversation log (used by the daily learning) ----------------------
+
+    @property
+    def log_dir(self) -> Path:
+        return self.path.parent / "conversations"
+
+    def log(self, role: str, text: str, when: datetime | None = None) -> None:
+        when = when or datetime.now()
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        entry = {"time": when.strftime("%H:%M:%S"), "role": role, "text": text}
+        with self._lock, (self.log_dir / f"{when:%Y-%m-%d}.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def day_messages(self, day: date) -> list[tuple[str, str]]:
+        path = self.log_dir / f"{day}.jsonl"
+        if not path.is_file():
+            return []
+        rows = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line)
+                rows.append((entry["role"], entry["text"]))
+            except (ValueError, KeyError):
+                continue
+        return rows
 
     # --- summary for Claude --------------------------------------------------
 

@@ -26,12 +26,17 @@ class Face:
     """Call the public methods from any thread; they're queued onto the UI thread."""
 
     def __init__(self, title: str = "JarvisBuddy", on_poke: Callable[[], None] | None = None,
-                 on_close: Callable[[], None] | None = None) -> None:
+                 on_close: Callable[[], None] | None = None, fullscreen: bool = False) -> None:
         self.root = tk.Tk()
         self.root.title(title)
         self.root.configure(bg=BG)
         self.root.geometry(f"{W}x{H}")
         self.root.minsize(360, 320)
+        if fullscreen:
+            self.root.attributes("-fullscreen", True)
+        self.root.bind("<Escape>", lambda e: self.root.attributes("-fullscreen", False))
+        self.root.bind("<F11>", lambda e: self.root.attributes(
+            "-fullscreen", not self.root.attributes("-fullscreen")))
         self.canvas = tk.Canvas(self.root, width=W, height=H, bg=BG, highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Button-1>", lambda e: on_poke and on_poke())

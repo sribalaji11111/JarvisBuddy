@@ -30,9 +30,12 @@ def _flag(name: str, default: bool = False) -> bool:
 class Config:
     user_name: str = "Sri"
     assistant_name: str = "Jarvis"
-    wake_words: tuple[str, ...] = ("jarvis", "hey jarvis")
+    wake_words: tuple[str, ...] = ("jarvis", "hey jarvis", "javis", "jervis", "jarvish", "jarwis")
+    follow_up_seconds: float = 10  # keep listening this long after a reply, no wake word needed
     data_dir: Path = field(default_factory=lambda: Path.home() / ".jarvisbuddy")
 
+    # Voice engine: "windows" (built-in, instant, offline) or "neural" (cuter, needs internet).
+    voice_engine: str = "windows"
     # Voice: "singsong" (cute, bouncy), "robot" (flat and high) or "normal".
     voice_style: str = "singsong"
     voice_name: str = "Zira"  # any installed Windows voice; Zira is the high US female voice
@@ -51,6 +54,11 @@ class Config:
     @property
     def notes_file(self) -> Path:
         return self.data_dir / "notes.txt"
+
+    @property
+    def personality_file(self) -> Path:
+        override = os.environ.get("JARVIS_PERSONALITY_FILE")
+        return Path(override).expanduser() if override else Path(__file__).resolve().parent.parent / "personality.md"
 
     @property
     def memory_file(self) -> Path:
@@ -72,9 +80,13 @@ class Config:
         cfg.user_name = env("JARVIS_USER_NAME") or cfg.user_name
         cfg.assistant_name = env("JARVIS_NAME") or cfg.assistant_name
         name = cfg.assistant_name.lower()
-        cfg.wake_words = (name, f"hey {name}")
+        if name != "jarvis":
+            cfg.wake_words = (name, f"hey {name}")
+        if follow := env("JARVIS_FOLLOW_UP_SECONDS"):
+            cfg.follow_up_seconds = float(follow)
         if data_dir := env("JARVIS_DATA_DIR"):
             cfg.data_dir = Path(data_dir).expanduser()
+        cfg.voice_engine = (env("JARVIS_VOICE_ENGINE") or cfg.voice_engine).lower()
         cfg.voice_style = (env("JARVIS_VOICE_STYLE") or cfg.voice_style).lower()
         cfg.voice_name = env("JARVIS_VOICE") or cfg.voice_name
         if rate := env("JARVIS_VOICE_RATE"):

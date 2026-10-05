@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import re
+import time
 from typing import Callable, Protocol
 
 from . import skills
@@ -61,7 +62,7 @@ class Assistant:
         self.brain = brain or Brain(config, self.memory, moods=skills.MOODS)
         self.ctx = skills.Context(
             config=config, actions=self.actions, memory=self.memory, speak=self.say,
-            mailer=mailer or Mailer(config),
+            mailer=mailer or Mailer(config), brain=self.brain,
         )
 
     def say(self, text: str, mood: str = "happy") -> None:
@@ -88,9 +89,14 @@ class Assistant:
     def handle(self, text: str) -> skills.Reply:
         """Respond to `text` and say the reply (unless it was already spoken while streaming)."""
         self.ui.set_caption(f"You: {text}")
-        reply = self.respond(text)
+        self.memory.log("user", text)
+        try:
+            reply = self.respond(text)
+        except Exception as e:  # a broken skill shouldn't crash Jarvis
+            reply = skills.Reply(f"Oops, that didn't work: {e}", mood="sad")
         if not reply.spoken:
             self.say(reply.text, reply.mood)
+        self.memory.log("assistant", reply.text)
         return reply
 
     def greet(self) -> None:
@@ -113,20 +119,24 @@ class Assistant:
                 break
 
     def run_voice(self, listener, always_listen: bool = False) -> None:
-        """Voice mode. Wake word, then the command. Follow-up questions (like "Should I send
-        it?") are answered without repeating the wake word."""
+        """Voice mode. Wake word, then the command. After each reply Jarvis keeps listening for
+        a few seconds, so you can carry on without saying the wake word again; questions like
+        "Should I send it?" are answered the same way."""
         self.greet()
         wake = self.config.wake_words
-        idle_status = "Listening..." if always_listen else f'Say "{wake[-1].title()}"'
+        idle_status = "Listening..." if always_listen else f'Say "{wake[1].title()}"'
         print(f"({idle_status}. Press Ctrl+C to quit.)")
+        awake_until = time.monotonic() + self.config.follow_up_seconds if self.ctx.pending else 0.0
         while True:
-            if self.ctx.pending is not None:
-                self.ui.set_status("Listening for your answer...")
-                command = listener.listen(timeout=8)
-                if not command:
+            remaining = awake_until - time.monotonic()
+            if remaining > 0 or self.ctx.pending is not None:
+                self.ui.set_status("Listening for your answer..." if self.ctx.pending else "I'm listening...")
+                heard = listener.listen(timeout=max(remaining, 4))
+                if not heard:
                     self.ctx.pending = None  # don't let a stray "yes" later send an email
-                    self.ui.set_status(idle_status)
+                    awake_until = 0.0
                     continue
+                command = strip_wake_word(heard, wake) or heard
             else:
                 self.ui.set_status(idle_status)
                 heard = listener.listen()
@@ -137,10 +147,9 @@ class Assistant:
                     continue
                 if not command:
                     self.say("Yes?", "excited")
-                    self.ui.set_status("Listening...")
-                    command = listener.listen(timeout=6)
-                    if not command:
-                        continue
+                    awake_until = time.monotonic() + self.config.follow_up_seconds
+                    continue
             print(f"You: {command}")
             if self.handle(command).end_session:
                 break
+            awake_until = time.monotonic() + self.config.follow_up_seconds
